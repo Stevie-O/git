@@ -26,7 +26,7 @@ git bisect replay <logfile>
 	replay bisection log.
 git bisect log
 	show bisect log.
-git bisect run <cmd>...
+git bisect run [--expect=<term> | -r | --invert] [--] <cmd>...
 	use <cmd>... to automatically bisect.
 
 Please use "git help bisect" to get the full man page.'
@@ -238,6 +238,31 @@ bisect_replay () {
 bisect_run () {
 	git bisect--helper --bisect-next-check $TERM_GOOD $TERM_BAD fail || exit
 
+	SUCCESS_TERM=$TERM_GOOD
+	FAIL_TERM=$TERM_BAD
+	INVERT_SET=
+	while [ "$1" != "${1#-}" ]; do
+		case "$1" in
+		--)
+			shift
+			break ;;
+		--expect=$TERM_GOOD)
+			[ -z "$INVERT_SET" ] || die "$(gettext "bisect run: multiple expect options specified")"
+			INVERT_SET=1 ;;
+		-r|--invert|--expect=$TERM_BAD)
+			[ -z "$INVERT_SET" ] || die "$(gettext "bisect run: multiple expect options specified")"
+			SUCCESS_TERM=$TERM_BAD
+			FAIL_TERM=$TERM_GOOD
+			INVERT_SET=1 ;;
+		--expect=*)
+			# how to localize part 2?
+			die "$(printf "$(gettext "bisect run: invalid --expect value, use --expect=%s or --expect=%s")" "$TERM_GOOD" "$TERM_BAD")" ;;
+		*)
+			die "$(printf "$(gettext "bisect run: invalid option: %s")" "$1")" ;;
+		esac
+		shift
+	done
+
 	test -n "$*" || die "$(gettext "bisect run failed: no command provided.")"
 
 	while true
@@ -262,10 +287,12 @@ exit code \$res from '\$command' is < 0 or >= 128" >&2
 			state='skip'
 		elif [ $res -gt 0 ]
 		then
-			state="$TERM_BAD"
+			state="$FAIL_TERM"
 		else
-			state="$TERM_GOOD"
+			state="$SUCCESS_TERM"
 		fi
+
+		echo "exit code $res means this commit is $state"
 
 		# We have to use a subshell because "bisect_state" can exit.
 		( bisect_state $state >"$GIT_DIR/BISECT_RUN" )
